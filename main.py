@@ -75,12 +75,12 @@ def run_sql(sql):
 
 
 df = run_sql('select * from transactions t, splits s, accounts a where t.guid=s.tx_guid and s.account_guid=a.guid order by num')
-df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'value_num', 'quantity_denom', 'account_type']]
+df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'value_num', 'quantity_denom', 'account_type', 'name']]
 df['num'] = pd.to_numeric(df['num'])
 df['code'] = pd.to_numeric(df['code'])
 df = df[~df['num'].isin(EXCLUDE_TRANS)]
 df['value'] = df['value_num'] / df['quantity_denom']
-df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'account_type', 'value']]
+df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'account_type', 'value', 'name']]
 df.to_csv(f'{COMPANY}_{YEAR}.csv', index=False)
 
 print('\n************************** Balanskonton ***********************************')
@@ -112,6 +112,13 @@ print('\n************************** SIE (alpha - experiment) *******************
 print('\nDropping rows without account code\n', df[df['code'].isnull()])
 df = df[df['code'].notnull()]
 
+dfa = df[['code', 'name']].drop_duplicates('code').sort_values('code')
+accounts = ''
+for index, row in dfa.iterrows():
+    accounts = accounts + '#KONTO {} \"{}\"\n'.format(
+                  row['code'],
+                  row['name'])
+
 df['code'] = df['code'].astype(int)
 df.post_date = df.post_date.str.replace('-','')
 df.enter_date = df.enter_date.str.replace('-','')
@@ -140,7 +147,8 @@ res = res + '}\n'
 # Add SIE header to file
 header = Path(f'{COMPANY}_header.se').read_text()
 print('\nAdding SIE header to SIE file\n', header)
-res = header + res
+
+res = header + '\n' + accounts + '\n' + res
 
 file = open(f'{COMPANY}_{YEAR}.se', 'w')
 file.write(res)

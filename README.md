@@ -10,7 +10,3 @@ NOTE: SIE4 innehåller endast transaktionerna och *inte* ingående eller utgåen
 
 SIE-filen har testats i Bokio och kan importeras där men några omfattande tester har inte gjorts. All feedback är välkommen, skapa en issue
 här i Github om du stöter på problem eller har frågor.
-
-Om du får problem vid import av din SIE-fil kan det bero på att konton används som inte finns i kontoplanen i bokföringprogrammet.
-Om du har möjlighet att göra en SIE-export med de konton du använder från något annat bokföringprogram kan du ta denna kontoplan och lägga in i `company_header.se`.
-Se `comapny2_header.se` för ett exempel.
