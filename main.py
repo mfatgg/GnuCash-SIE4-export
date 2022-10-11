@@ -2,9 +2,11 @@
 #
 # Playground for GnuCash reports on top of sqlite db
 #
+# SIE4-export assumes that verification with num 1 has initial balances
+#
 # Resources
 # * https://wiki.gnucash.org/wiki/SQL
-#
+# * https://sietest.sie.se/
 
 tables = ['accounts',          'customers',         'lots',              'splits',
 'billterms',         'employees',         'orders',            'taxtable_entries',
@@ -17,6 +19,7 @@ import sqlite3
 import argparse
 import pandas as pd
 import sys
+import codecs
 
 from pathlib import Path
 from os.path import exists
@@ -59,8 +62,8 @@ print(f'Report based on: {DB_FILE}')
 
 # Read sqlite query results into a pandas DataFrame
 def sel_table(table):
-    print(f'\n-------------------- {table} -------------------\n')
     con = sqlite3.connect(DB_FILE)
+    print(f'\n-------------------- {table} -------------------\n')
     df = pd.read_sql_query(f'select * from {table}', con)
     print(df.columns)
     print(df.head(100))
@@ -69,15 +72,29 @@ def sel_table(table):
 
 def run_sql(sql):
     con = sqlite3.connect(DB_FILE)
-    df = pd.read_sql_query(sql, con)
+    df = pd.read_sql(sql, con)
     con.close()
     return df
 
 
 df = run_sql('select * from transactions t, splits s, accounts a where t.guid=s.tx_guid and s.account_guid=a.guid order by num')
+
+# Saw new-line in description once...
+df = df.replace('\n','', regex=True)
+
 df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'value_num', 'quantity_denom', 'account_type', 'name']]
 df['num'] = pd.to_numeric(df['num'])
 df['code'] = pd.to_numeric(df['code'])
+
+print('\nDropping rows without account code\n', df[df['code'].isnull()])
+df = df[df['code'].notnull()]
+
+print('\nDropping rows without number \n', df[df['num'].isnull()])
+df = df[df['num'].notnull()]
+
+df['code'] = df['code'].astype(int)
+df['num'] = df['num'].astype(int)
+
 df = df[~df['num'].isin(EXCLUDE_TRANS)]
 df['value'] = df['value_num'] / df['quantity_denom']
 df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'account_type', 'value', 'name']]
@@ -96,6 +113,21 @@ tillg = dfb[(dfb["code"]>=2000) & (dfb["code"]<3000)].sum()[1]
 print(f'EK:\t\t\t{ek:,.2f}\nTillgångar:\t\t{tillg:,.2f}\nBeräknat resultat:\t{ek+tillg:,.2f}')
 print(f'')
 
+# SIE4:
+# #IB 0 1311 100000 0
+# #UB 0 1311 100000 0
+
+ib_ub = ''
+dft = df[df['num']==1]
+for index, row in dft.iterrows():
+    ib_ub = ib_ub + '#IB 0 {} {:.2f} 0\n'.format(
+                  row['code'],
+                  row['value'])
+
+for index, row in dfb.iterrows():
+    ib_ub = ib_ub + '#UB 0 {} {:.2f} 0\n'.format(
+                  row['code'].astype(int),
+                  row['value'])
 
 print('\n************************** Resultatkonton ***********************************')
 dft = df[df['code']>2999]
@@ -106,11 +138,15 @@ print(dfr.head(100))
 dfr.to_csv(f'{COMPANY}_{YEAR}-resultat.csv', index=False)
 print(f'Beräknat resultat:{dfr["value"].sum():,.2f} (<0 innebär vinst)')
 
+# SIE:
+# #RES 0 3010 -400000 0
+res_ = ''
+for index, row in dft.iterrows():
+    res_ = res_ + '#RES 0 {} {:.2f} 0\n'.format(
+                  row['code'],
+                  row['value'])
 
 print('\n************************** SIE (alpha - experiment) ***********************************')
-
-print('\nDropping rows without account code\n', df[df['code'].isnull()])
-df = df[df['code'].notnull()]
 
 dfa = df[['code', 'name']].drop_duplicates('code').sort_values('code')
 accounts = ''
@@ -119,7 +155,6 @@ for index, row in dfa.iterrows():
                   row['code'],
                   row['name'])
 
-df['code'] = df['code'].astype(int)
 df.post_date = df.post_date.str.replace('-','')
 df.enter_date = df.enter_date.str.replace('-','')
 prev_num = -1
@@ -148,8 +183,12 @@ res = res + '}\n'
 header = Path(f'{COMPANY}_header.se').read_text()
 print('\nAdding SIE header to SIE file\n', header)
 
-res = header + '\n' + accounts + '\n' + res
+res = header + '\n' + accounts + '\n' + ib_ub + '\n' + res_ + '\n'+ res
 
-file = open(f'{COMPANY}_{YEAR}.se', 'w')
+filename = f'{COMPANY}_{YEAR}.se'
+file = open(filename, 'w')
 file.write(res)
 file.close()
+
+nfo = codecs.open(filename, encoding='utf-8').read()
+codecs.open(f'{COMPANY}_{YEAR}_cp437.se', 'w', encoding='cp437').write(nfo)
