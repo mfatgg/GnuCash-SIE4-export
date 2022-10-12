@@ -29,6 +29,8 @@ from os.path import exists
 DB_EXT  = 'gnucash'
 
 EXCLUDE_TRANS = []
+MOMS_KONTON = [1650,2611,2641,2650]
+
 
 pd.set_option('display.max_columns', 50)
 pd.set_option('display.max_rows', 100)
@@ -146,6 +148,25 @@ for index, row in dft.iterrows():
                   row['code'],
                   row['value'])
 
+
+
+print('\n************************** MOMS-konton ***********************************')
+dfM = df[df['code'].isin(MOMS_KONTON)]
+dfM.loc[:,'month'] = pd.to_datetime(dfM['post_date'])
+grouped  = dfM[['month','code','value']].groupby(['code',pd.Grouper(key='month', freq='M')])
+
+dft = grouped.agg([('Debit' , lambda x : x[x > 0].sum()),('Kredit' , lambda x : x[x < 0].sum())])
+print(dft)
+dft.reset_index().to_csv(f'{COMPANY}_{YEAR}-moms.csv', index=False)
+
+print('\n\n--- Totaler ---')
+dft = grouped.sum()
+print(dft)
+dft.reset_index().to_csv(f'{COMPANY}_{YEAR}-moms-total.csv', index=False)
+
+
+
+
 print('\n************************** SIE (alpha - experiment) ***********************************')
 
 dfa = df[['code', 'name']].drop_duplicates('code').sort_values('code')
@@ -190,5 +211,8 @@ file = open(filename, 'w')
 file.write(res)
 file.close()
 
-nfo = codecs.open(filename, encoding='utf-8').read()
-codecs.open(f'{COMPANY}_{YEAR}_cp437.se', 'w', encoding='cp437').write(nfo)
+try:
+    nfo = codecs.open(filename, encoding='utf-8').read()
+    codecs.open(f'{COMPANY}_{YEAR}_cp437.se', 'w', encoding='cp437').write(nfo)
+except:
+  print("An exception while converting SIE4 to CP437")
