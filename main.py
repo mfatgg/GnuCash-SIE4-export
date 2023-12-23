@@ -83,7 +83,8 @@ df = run_sql(
     'select'
     ' t.post_date, t.enter_date, t.description,'
     ' s.tx_guid, s.memo, s.value_num, s.quantity_denom,'
-    ' a.name, a.account_type, a.code'
+    ' a.name, a.account_type, a.code,'
+    ' (select i.id from invoices i where i.post_txn=t.guid or i.post_lot=s.lot_guid or i.id=t.num) id'
     ' from transactions t, splits s, accounts a'
     ' where t.guid=s.tx_guid and s.account_guid=a.guid'
     ' order by post_date')
@@ -97,7 +98,7 @@ for tx_guid, tx_df in grouped:
 # Saw new-line in description once...
 df = df.replace('\n','', regex=True)
 
-df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'value_num', 'quantity_denom', 'account_type', 'name']]
+df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'value_num', 'quantity_denom', 'account_type', 'name', 'id']]
 #df['num'] = pd.to_numeric(df['num'])
 df['code'] = pd.to_numeric(df['code'])
 
@@ -109,10 +110,11 @@ df = df[df['code'].notnull()]
 
 df['code'] = df['code'].astype(int)
 #df['num'] = df['num'].astype(int)
+df['id'] = df['id'].fillna('')
 
 #df = df[~df['num'].isin(EXCLUDE_TRANS)]
 df['value'] = df['value_num'] / df['quantity_denom']
-df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'account_type', 'value', 'name']]
+df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'account_type', 'value', 'name', 'id']]
 df.to_csv(f'{COMPANY}_{YEAR}.csv', index=False)
 
 print('\n************************** Balanskonton ***********************************')
@@ -197,17 +199,18 @@ res = ''
 
 df = df.sort_values(['post_date', 'tx_guid', 'code'])
 grouped = df.groupby(['post_date', 'tx_guid'])
-for num, (tx_guid, tx_df) in enumerate(grouped):
+for idx, (tx_guid, tx_df) in enumerate(grouped):
     first_trans = True
     for index, row in tx_df.iterrows():
         if first_trans:
             first_trans = False
             res = res + '#VER A {} {} \"{}\"\n{{\n'.format(
-                        num,
+                        idx+1,
                         row['post_date'][0:8],
                         row['description'])
-        res = res + '#TRANS {} {{}} {:.2f} \"\" \"{}\"\n'.format(
+        res = res + '#TRANS {} {{{}}} {:.2f} \"\" \"{}\"\n'.format(
                 row['code'],
+                row['id'],
                 row['value'],
                 row['memo'])
     res = res + '}\n'
