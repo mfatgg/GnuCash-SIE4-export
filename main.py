@@ -29,7 +29,7 @@ from os.path import exists
 DB_EXT  = 'gnucash'
 
 EXCLUDE_TRANS = []
-MOMS_KONTON = [1650,2611,2641,2650]
+MOMS_KONTON = [1650,2611,2612,2614,2641,2645,2650]
 
 
 pd.set_option('display.max_columns', 50)
@@ -79,27 +79,40 @@ def run_sql(sql):
     return df
 
 
-df = run_sql('select * from transactions t, splits s, accounts a where t.guid=s.tx_guid and s.account_guid=a.guid order by num')
+df = run_sql(
+    'select'
+    ' t.post_date, t.enter_date, t.description,'
+    ' s.tx_guid, s.memo, s.value_num, s.quantity_denom,'
+    ' a.name, a.account_type, a.code'
+    ' from transactions t, splits s, accounts a'
+    ' where t.guid=s.tx_guid and s.account_guid=a.guid'
+    ' order by post_date')
+print ("df:", df.columns)
+grouped = df.groupby(['tx_guid'])
+print("orig df:")
+for tx_guid, tx_df in grouped:
+    print("  transaction:", tx_guid, tx_df.columns)
+
 
 # Saw new-line in description once...
 df = df.replace('\n','', regex=True)
 
-df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'value_num', 'quantity_denom', 'account_type', 'name']]
-df['num'] = pd.to_numeric(df['num'])
+df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'value_num', 'quantity_denom', 'account_type', 'name']]
+#df['num'] = pd.to_numeric(df['num'])
 df['code'] = pd.to_numeric(df['code'])
 
 print('\nDropping rows without account code\n', df[df['code'].isnull()])
 df = df[df['code'].notnull()]
 
-print('\nDropping rows without number \n', df[df['num'].isnull()])
-df = df[df['num'].notnull()]
+#print('\nDropping rows without number \n', df[df['num'].isnull()])
+#df = df[df['num'].notnull()]
 
 df['code'] = df['code'].astype(int)
-df['num'] = df['num'].astype(int)
+#df['num'] = df['num'].astype(int)
 
-df = df[~df['num'].isin(EXCLUDE_TRANS)]
+#df = df[~df['num'].isin(EXCLUDE_TRANS)]
 df['value'] = df['value_num'] / df['quantity_denom']
-df = df[['num', 'post_date', 'enter_date', 'code', 'description', 'account_type', 'value', 'name']]
+df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'account_type', 'value', 'name']]
 df.to_csv(f'{COMPANY}_{YEAR}.csv', index=False)
 
 print('\n************************** Balanskonton ***********************************')
@@ -120,7 +133,8 @@ print(f'')
 # #UB 0 1311 100000 0
 
 ib_ub = ''
-dft = df[df['num']==1]
+#dft = df[df['num']==1]
+dft = df.sort_values('post_date').groupby(['code']).first().reset_index()
 for index, row in dft.iterrows():
     ib_ub = ib_ub + '#IB 0 {} {:.2f} 0\n'.format(
                   row['code'],
@@ -179,26 +193,25 @@ for index, row in dfa.iterrows():
 df.post_date = df.post_date.str.replace('-','')
 df.enter_date = df.enter_date.str.replace('-','')
 prev_num = -1
-first_trans = True
 res = ''
-df = df.sort_values('num')
-for index, row in df.iterrows():
-    if prev_num != row['num']:
-        if not first_trans:
-            res = res + '}\n'
-        first_trans = False
 
-        res = res + '#VER A {} {} \"{}\" {}\n{{\n'.format(
-                    row['num'],
-                    row['post_date'][0:8],
-                    row['description'][0],
-                    row['enter_date'][0:8])
-    res = res + '#TRANS {} {{}} {:.2f} \"\" \"\" 0\n'.format(
-            row['code'],
-            row['value'])
-    prev_num = row['num']
+df = df.sort_values(['post_date', 'tx_guid', 'code'])
+grouped = df.groupby(['post_date', 'tx_guid'])
+for num, (tx_guid, tx_df) in enumerate(grouped):
+    first_trans = True
+    for index, row in tx_df.iterrows():
+        if first_trans:
+            first_trans = False
+            res = res + '#VER A {} {} \"{}\"\n{{\n'.format(
+                        num,
+                        row['post_date'][0:8],
+                        row['description'])
+        res = res + '#TRANS {} {{}} {:.2f} \"\" \"{}\"\n'.format(
+                row['code'],
+                row['value'],
+                row['memo'])
+    res = res + '}\n'
 
-res = res + '}\n'
 
 # Add SIE header to file
 header = Path(f'{COMPANY}_header.se').read_text()
