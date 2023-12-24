@@ -81,11 +81,16 @@ def run_sql(sql):
 
 df = run_sql(
     'select'
-    ' t.post_date, t.enter_date, t.description,'
-    ' s.tx_guid, s.memo, s.value_num, s.quantity_denom,'
-    ' a.name, a.account_type, a.code,'
-    ' (select i.id from invoices i where i.post_txn=t.guid or i.post_lot=s.lot_guid or i.id=t.num) id'
+    '   t.post_date, t.enter_date, t.description,'
+    '   s.tx_guid, s.memo, s.value_num, s.quantity_denom,'
+    '   a.name, a.account_type, a.code, i.id i_id, c.id c_id, v.id v_id'
     ' from transactions t, splits s, accounts a'
+    '   left join invoices i'
+    '     on i.post_txn=t.guid or i.post_lot=s.lot_guid or i.id=t.num'
+    '   left join customers c'
+    '     on i.owner_guid=c.guid'
+    '   left join vendors v'
+    '     on i.owner_guid=v.guid'
     ' where t.guid=s.tx_guid and s.account_guid=a.guid'
     ' order by post_date')
 print ("df:", df.columns)
@@ -98,7 +103,7 @@ for tx_guid, tx_df in grouped:
 # Saw new-line in description once...
 df = df.replace('\n','', regex=True)
 
-df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'value_num', 'quantity_denom', 'account_type', 'name', 'id']]
+df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'value_num', 'quantity_denom', 'account_type', 'name', 'i_id', 'c_id', 'v_id']]
 #df['num'] = pd.to_numeric(df['num'])
 df['code'] = pd.to_numeric(df['code'])
 
@@ -110,11 +115,13 @@ df = df[df['code'].notnull()]
 
 df['code'] = df['code'].astype(int)
 #df['num'] = df['num'].astype(int)
-df['id'] = df['id'].fillna('')
+df['i_id'] = df['i_id'].fillna('')
+df['c_id'] = df['c_id'].fillna('')
+df['v_id'] = df['v_id'].fillna('')
 
 #df = df[~df['num'].isin(EXCLUDE_TRANS)]
 df['value'] = df['value_num'] / df['quantity_denom']
-df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'account_type', 'value', 'name', 'id']]
+df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'account_type', 'value', 'name', 'i_id', 'c_id', 'v_id']]
 df.to_csv(f'{COMPANY}_{YEAR}.csv', index=False)
 
 print('\n************************** Balanskonton ***********************************')
@@ -192,6 +199,10 @@ for index, row in dfa.iterrows():
                   row['code'],
                   row['name'])
 
+dim = '#DIM 8 Kund\n'
+dim = '#DIM 9 Leverantör\n'
+dim = '#DIM 10 Faktura\n'
+
 df.post_date = df.post_date.str.replace('-','')
 df.enter_date = df.enter_date.str.replace('-','')
 prev_num = -1
@@ -208,9 +219,21 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
                         idx+1,
                         row['post_date'][0:8],
                         row['description'])
+        invoice_obj = '\"10\" \"{}\"'.format(row['i_id']) if row['i_id'] else ''
+        customer_obj = '\"8\" \"{}\"'.format(row['c_id']) if row['c_id'] else ''
+        vendor_obj = '\"9\" \"{}\"'.format(row['v_id']) if row['v_id'] else ''
+        objs = invoice_obj
+        if customer_obj:
+            if objs:
+                objs += ' '
+            objs += customer_obj
+        if vendor_obj:
+            if objs:
+                objs += ' '
+            objs += vendor_obj
         res = res + '#TRANS {} {{{}}} {:.2f} \"\" \"{}\"\n'.format(
                 row['code'],
-                row['id'],
+                objs,
                 row['value'],
                 row['memo'])
     res = res + '}\n'
