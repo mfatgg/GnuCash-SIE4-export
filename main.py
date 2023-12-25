@@ -83,15 +83,21 @@ df = run_sql(
     'select'
     '   t.post_date, t.enter_date, t.description,'
     '   s.tx_guid, s.memo, s.value_num, s.quantity_denom,'
-    '   a.name, a.account_type, a.code, i.id i_id, c.id c_id, v.id v_id'
-    ' from transactions t, splits s, accounts a'
+    '   a.name, a.account_type, a.code,'
+    '   i.id invoice_id,'
+    '   c.id customer_id, c.name customer_name,'
+    '   v.id vendor_id, v.name vendor_name'
+    ' from transactions t'
+    '   left join splits s'
+    '     on s.tx_guid=t.guid'
+    '   left join accounts a'
+    '     on a.guid=s.account_guid'
     '   left join invoices i'
     '     on i.post_txn=t.guid or i.post_lot=s.lot_guid or i.id=t.num'
     '   left join customers c'
-    '     on i.owner_guid=c.guid'
+    '     on c.guid=i.owner_guid'
     '   left join vendors v'
-    '     on i.owner_guid=v.guid'
-    ' where t.guid=s.tx_guid and s.account_guid=a.guid'
+    '     on v.guid=i.owner_guid'
     ' order by post_date')
 print ("df:", df.columns)
 grouped = df.groupby(['tx_guid'])
@@ -103,7 +109,6 @@ for tx_guid, tx_df in grouped:
 # Saw new-line in description once...
 df = df.replace('\n','', regex=True)
 
-df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'value_num', 'quantity_denom', 'account_type', 'name', 'i_id', 'c_id', 'v_id']]
 #df['num'] = pd.to_numeric(df['num'])
 df['code'] = pd.to_numeric(df['code'])
 
@@ -115,13 +120,13 @@ df = df[df['code'].notnull()]
 
 df['code'] = df['code'].astype(int)
 #df['num'] = df['num'].astype(int)
-df['i_id'] = df['i_id'].fillna('')
-df['c_id'] = df['c_id'].fillna('')
-df['v_id'] = df['v_id'].fillna('')
+#df['invoice_id'] = df['invoice_id'].fillna('')
+#df['customer_id'] = df['customer_id'].fillna('')
+#df['vendor_id'] = df['vendor_id'].fillna('')
 
 #df = df[~df['num'].isin(EXCLUDE_TRANS)]
 df['value'] = df['value_num'] / df['quantity_denom']
-df = df[['tx_guid', 'post_date', 'enter_date', 'code', 'description', 'memo', 'account_type', 'value', 'name', 'i_id', 'c_id', 'v_id']]
+df = df.drop(columns=['value_num', 'quantity_denom'])
 df.to_csv(f'{COMPANY}_{YEAR}.csv', index=False)
 
 print('\n************************** Balanskonton ***********************************')
@@ -200,8 +205,18 @@ for index, row in dfa.iterrows():
                   row['name'])
 
 dim = '#DIM 8 Kund\n'
-dim = '#DIM 9 Leverantör\n'
-dim = '#DIM 10 Faktura\n'
+dim += '#DIM 9 Leverantör\n'
+dim += '#DIM 10 Faktura\n'
+invoices = df[['invoice_id']].dropna().sort_values('invoice_id').drop_duplicates()
+customers = df[['customer_id', 'customer_name']].dropna().sort_values('customer_id').drop_duplicates()
+vendors = df[['vendor_id', 'vendor_name']].dropna().sort_values('vendor_id').drop_duplicates()
+objects = ''
+for _index, c in customers.iterrows():
+    objects += '#OBJEKT 8 \"{}\" \"Kund: {}\"\n'.format(c['customer_id'], c['customer_name'])
+for _index, v in vendors.iterrows():
+    objects += '#OBJEKT 9 \"{}\" \"Leverantör: {}\"\n'.format(v['vendor_id'], v['vendor_name'])
+for _index, i in invoices.iterrows():
+    objects += '#OBJEKT 10 \"{}\" \"Faktura: #{}\"\n'.format(i['invoice_id'], i['invoice_id'])
 
 df.post_date = df.post_date.str.replace('-','')
 df.enter_date = df.enter_date.str.replace('-','')
@@ -219,10 +234,10 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
                         idx+1,
                         row['post_date'][0:8],
                         row['description'])
-        invoice_obj = '\"10\" \"{}\"'.format(row['i_id']) if row['i_id'] else ''
-        customer_obj = '\"8\" \"{}\"'.format(row['c_id']) if row['c_id'] else ''
-        vendor_obj = '\"9\" \"{}\"'.format(row['v_id']) if row['v_id'] else ''
-        objs = invoice_obj
+        customer_obj = '\"8\" \"{}\"'.format(row['customer_id']) if row['customer_id'] else ''
+        vendor_obj = '\"9\" \"{}\"'.format(row['vendor_id']) if row['vendor_id'] else ''
+        invoice_obj = '\"10\" \"{}\"'.format(row['invoice_id']) if row['invoice_id'] else ''
+        objs = ''
         if customer_obj:
             if objs:
                 objs += ' '
@@ -231,6 +246,10 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
             if objs:
                 objs += ' '
             objs += vendor_obj
+        if invoice_obj:
+            if objs:
+                objs += ' '
+            objs += invoice_obj
         res = res + '#TRANS {} {{{}}} {:.2f} \"\" \"{}\"\n'.format(
                 row['code'],
                 objs,
@@ -243,7 +262,7 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
 header = Path(f'{COMPANY}_header.se').read_text()
 print('\nAdding SIE header to SIE file\n', header)
 
-res = header + '\n' + accounts + '\n' + ib_ub + '\n' + res_ + '\n'+ res
+res = header + '\n' + accounts + '\n' + ib_ub + '\n' + res_ + '\n' + dim + '\n' + objects + '\n'+ res
 
 filename = f'{COMPANY}_{YEAR}.se'
 file = open(filename, 'w')
