@@ -20,6 +20,7 @@ import argparse
 import pandas as pd
 import sys
 import codecs
+import datetime as dt
 
 from pathlib import Path
 from os.path import exists
@@ -117,6 +118,10 @@ df = df[df['code'].notnull()]
 
 #print('\nDropping rows without number \n', df[df['num'].isnull()])
 #df = df[df['num'].notnull()]
+
+df['post_date'] = pd.to_datetime(df['post_date'])
+print('\nDropping rows with post_date != 2023\n', df[df['post_date'].dt.year == 2023])
+df = df[df['post_date'].dt.year == 2023]
 
 df['code'] = df['code'].astype(int)
 #df['num'] = df['num'].astype(int)
@@ -218,8 +223,7 @@ for _index, v in vendors.iterrows():
 for _index, i in invoices.iterrows():
     objects += '#OBJEKT 10 \"{}\" \"Faktura: #{}\"\n'.format(i['invoice_id'], i['invoice_id'])
 
-df.post_date = df.post_date.str.replace('-','')
-df.enter_date = df.enter_date.str.replace('-','')
+df.post_date = df.post_date.dt.strftime('%Y%m%d')
 prev_num = -1
 res = ''
 
