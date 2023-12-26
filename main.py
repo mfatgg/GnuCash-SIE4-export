@@ -120,8 +120,8 @@ df = df[df['code'].notnull()]
 #df = df[df['num'].notnull()]
 
 df['post_date'] = pd.to_datetime(df['post_date'])
-print('\nDropping rows with post_date != 2023\n', df[df['post_date'].dt.year == 2023])
-df = df[df['post_date'].dt.year == 2023]
+print('\nDropping rows with post_date != 2023\n', df[df['post_date'].dt.year==2023])
+df = df[df['post_date'].dt.year==2023]
 
 df['code'] = df['code'].astype(int)
 #df['num'] = df['num'].astype(int)
@@ -227,10 +227,11 @@ df.post_date = df.post_date.dt.strftime('%Y%m%d')
 prev_num = -1
 res = ''
 
-df = df.sort_values(['post_date', 'tx_guid', 'code'])
-grouped = df.groupby(['post_date', 'tx_guid'])
+df = df.sort_values(['post_date', 'description', 'tx_guid', 'code'])
+grouped = df.groupby(['post_date', 'description', 'tx_guid'])
 for idx, (tx_guid, tx_df) in enumerate(grouped):
     first_trans = True
+    trans_balance = 0
     for index, row in tx_df.iterrows():
         if first_trans:
             first_trans = False
@@ -259,7 +260,10 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
                 objs,
                 row['value'],
                 row['memo'])
+        trans_balance += row['value']
     res = res + '}\n'
+    if trans_balance != 0:
+        print("Unbalanced transaction: #{}".format(idx+1))
 
 
 # Add SIE header to file
