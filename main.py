@@ -32,6 +32,10 @@ DB_EXT  = 'gnucash'
 EXCLUDE_TRANS = []
 MOMS_KONTON = [1650,2611,2612,2614,2641,2645,2650]
 
+PREVIOUS_FINANCIAL_YEAR_START = '20220511'
+PREVIOUS_FINANCIAL_YEAR_END = '20221231'
+FINANCIAL_YEAR_START = '20230101'
+FINANCIAL_YEAR_END = '20231231'
 
 pd.set_option('display.max_columns', 50)
 pd.set_option('display.max_rows', 100)
@@ -116,8 +120,9 @@ df = df[df['code'].notnull()]
 #df = df[df['num'].notnull()]
 
 df['post_date'] = pd.to_datetime(df['post_date'])
-print('\nDropping rows with post_date != 2023\n', df[df['post_date'].dt.year==2023])
-df = df[df['post_date'].dt.year==2023]
+df['post_date'] = df['post_date'].dt.strftime('%Y%m%d')
+print('\nDropping rows with post_date > FINANCIAL_YEAR_END\n')
+df = df.loc[df['post_date'] <= FINANCIAL_YEAR_END]
 
 df['code'] = df['code'].astype(int)
 #df['num'] = df['num'].astype(int)
@@ -148,8 +153,12 @@ print(f'')
 # #UB 0 1311 100000 0
 
 ib_ub = ''
-#dft = df[df['num']==1]
-dft = df.sort_values('post_date').groupby(['code']).first().reset_index()
+dft = (df[['post_date', 'code', 'value']]
+    .loc[df['post_date'] < FINANCIAL_YEAR_START]
+    .sort_values('post_date')
+    .groupby(['code'])
+    .sum()
+    .reset_index())
 for index, row in dft.iterrows():
     ib_ub = ib_ub + '#IB 0 {} {:.2f} 0\n'.format(
                   row['code'],
@@ -162,6 +171,8 @@ for index, row in dfb.iterrows():
 
 print('\n************************** Resultatkonton ***********************************')
 dft = df[df['code']>2999]
+mask = df['post_date'] >= FINANCIAL_YEAR_START
+dft = dft.loc[mask]
 dfr = dft[['code','value']].groupby(['code']).sum().reset_index()
 df['value'] = pd.to_numeric(df['value'])
 print(dfr.columns)
@@ -172,7 +183,7 @@ print(f'Beräknat resultat:{dfr["value"].sum():,.2f} (<0 innebär vinst)')
 # SIE:
 # #RES 0 3010 -400000 0
 res_ = ''
-for index, row in dft.iterrows():
+for index, row in dfr.iterrows():
     res_ = res_ + '#RES 0 {} {:.2f} 0\n'.format(
                   row['code'],
                   row['value'])
@@ -198,6 +209,9 @@ dft.reset_index().to_csv(f'{COMPANY}_{YEAR}-moms-total.csv', index=False)
 
 print('\n************************** SIE (alpha - experiment) ***********************************')
 
+print('\nDropping rows with post_date < FINANCIAL_YEAR_START\n')
+df = df.loc[df['post_date'] >= FINANCIAL_YEAR_START]
+
 dfa = df[['code', 'name']].drop_duplicates('code').sort_values('code')
 accounts = ''
 for index, row in dfa.iterrows():
@@ -219,7 +233,6 @@ for _index, v in vendors.iterrows():
 for _index, i in invoices.iterrows():
     objects += '#OBJEKT 10 \"{}\" \"Faktura: #{}\"\n'.format(i['invoice_id'], i['invoice_id'])
 
-df.post_date = df.post_date.dt.strftime('%Y%m%d')
 prev_num = -1
 res = ''
 
