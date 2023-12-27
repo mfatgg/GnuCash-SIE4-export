@@ -8,13 +8,6 @@
 # * https://wiki.gnucash.org/wiki/SQL
 # * https://sietest.sie.se/
 
-tables = ['accounts',          'customers',         'lots',              'splits',
-'billterms',         'employees',         'orders',            'taxtable_entries',
-'books',             'entries' ,          'prices',            'taxtables',
-'budget_amounts',    'gnclock',           'recurrences',       'transactions',
-'budgets',           'invoices',          'schedxactions',     'vendors',
-'commodities' ,      'jobs',              'slots',             'versions']
-
 import sqlite3
 import argparse
 import pandas as pd
@@ -68,15 +61,6 @@ print(f'Report based on: {DB_FILE}')
 
 
 # Read sqlite query results into a pandas DataFrame
-def sel_table(table):
-    con = sqlite3.connect(DB_FILE)
-    print(f'\n-------------------- {table} -------------------\n')
-    df = pd.read_sql_query(f'select * from {table}', con)
-    print(df.columns)
-    print(df.head(100))
-    con.close()
-    return df
-
 def run_sql(sql):
     con = sqlite3.connect(DB_FILE)
     df = pd.read_sql(sql, con)
@@ -135,67 +119,129 @@ df['value'] = df['value_num'] / df['quantity_denom']
 df = df.drop(columns=['value_num', 'quantity_denom'])
 df.to_csv(f'{COMPANY}_{YEAR}.csv', index=False)
 
+
+print('\n************************** Accounts ***********************************')
+dfa = df[['code', 'name']].sort_values('code').drop_duplicates('code')
+
+account_codes = dfa['code'].to_list()
+accounts = ''
+for index, row in dfa.iterrows():
+    accounts += '#KONTO {} \"{}\"\n'.format(
+        row['code'],
+        row['name'])
+
+print(dfa.columns)
+print(dfa.head(100))
+
+
 print('\n************************** Balanskonton ***********************************')
-dft = df[df['code']<3000]
-dfb = dft[['code','value']].groupby(['code']).sum().reset_index()
-print(dfb.columns)
-print(dfb.head(100))
-dfb.to_csv(f'{COMPANY}_{YEAR}-balans.csv', index=False)
+dft = df[['post_date', 'code', 'value']]
+dft = dft.loc[dft['code'] < 3000]
 
-ek = dfb[dfb["code"]<2000].sum()[1]
-tillg = dfb[(dfb["code"]>=2000) & (dfb["code"]<3000)].sum()[1]
+ib = ''
+for year_code in [0, -1]:
+    balance_start_date = FINANCIAL_YEAR_START if year_code == 0 else PREVIOUS_FINANCIAL_YEAR_START
 
-print(f'EK:\t\t\t{ek:,.2f}\nTillgångar:\t\t{tillg:,.2f}\nBeräknat resultat:\t{ek+tillg:,.2f}')
-print(f'')
+    dfb = dft.loc[dft['post_date'] < balance_start_date]
+    dfb = (dfb[['code', 'value']]
+        .groupby(['code'])
+        .sum()
+        .reset_index())
 
-# SIE4:
-# #IB 0 1311 100000 0
-# #UB 0 1311 100000 0
+    # SIE4:
+    # #IB 0 1311 100000
+    # #IB -1 1311 90000
+    for account_code in account_codes:
+        row = dfb.loc[dfb['code'] == account_code]
+        value = 0.0 if row.empty else row['value'].iloc[0]
+        ib += '#IB {} {} {:.2f}\n'.format(
+            year_code,
+            account_code,
+            value)
 
-ib_ub = ''
-dft = (df[['post_date', 'code', 'value']]
-    .loc[df['post_date'] < FINANCIAL_YEAR_START]
-    .sort_values('post_date')
-    .groupby(['code'])
-    .sum()
-    .reset_index())
-for index, row in dft.iterrows():
-    ib_ub = ib_ub + '#IB 0 {} {:.2f} 0\n'.format(
-                  row['code'],
-                  row['value'])
+ub = ''
+for year_code in [0, -1]:
+    print('year_code=', year_code)
+    balance_end_date = FINANCIAL_YEAR_END if year_code == 0 else PREVIOUS_FINANCIAL_YEAR_END
 
-for index, row in dfb.iterrows():
-    ib_ub = ib_ub + '#UB 0 {} {:.2f} 0\n'.format(
-                  row['code'].astype(int),
-                  row['value'])
+    dfb = dft.loc[dft['post_date'] <= balance_end_date]
+    dfb = (dfb[['code', 'value']]
+        .groupby(['code'])
+        .sum()
+        .reset_index())
+
+    # SIE4:
+    # #UB 0 1311 100000
+    # #UB -1 1311 90000
+    for account_code in account_codes:
+        row = dfb.loc[dfb['code'] == account_code]
+        value = 0.0 if row.empty else row['value'].iloc[0]
+        ub += '#UB {} {} {:.2f}\n'.format(
+            year_code,
+            account_code,
+            value)
+
+    print(dfb.columns)
+    print(dfb.head(100))
+    year = FINANCIAL_YEAR_END[:4] if year_code == 0 else PREVIOUS_FINANCIAL_YEAR_END[:4]
+    dfb.to_csv(f'{COMPANY}_{year}-balans.csv', index=False)
+
+    ek = dfb[dfb["code"] < 2000].sum()[1]
+    tillg = dfb[(dfb["code"] >= 2000) & (dfb["code"] < 3000)].sum()[1]
+    print(f'EK:\t\t\t{ek:,.2f}')
+    print(f'Tillgångar:\t\t{tillg:,.2f}')
+    print(f'Beräknat resultat:\t{ek+tillg:,.2f}')
+    print(f'')
+
+
 
 print('\n************************** Resultatkonton ***********************************')
-dft = df[df['code']>2999]
-mask = df['post_date'] >= FINANCIAL_YEAR_START
-dft = dft.loc[mask]
-dfr = dft[['code','value']].groupby(['code']).sum().reset_index()
-df['value'] = pd.to_numeric(df['value'])
-print(dfr.columns)
-print(dfr.head(100))
-dfr.to_csv(f'{COMPANY}_{YEAR}-resultat.csv', index=False)
-print(f'Beräknat resultat:{dfr["value"].sum():,.2f} (<0 innebär vinst)')
+dft = df[['post_date', 'code', 'value']]
+dft = dft.loc[dft['code'] >= 3000]
 
-# SIE:
-# #RES 0 3010 -400000 0
 res_ = ''
-for index, row in dfr.iterrows():
-    res_ = res_ + '#RES 0 {} {:.2f} 0\n'.format(
-                  row['code'],
-                  row['value'])
+for year_code in [0, -1]:
+    print('year_code=', year_code)
+    balance_start_date = FINANCIAL_YEAR_START if year_code == 0 else PREVIOUS_FINANCIAL_YEAR_START
+    balance_end_date = FINANCIAL_YEAR_END if year_code == 0 else PREVIOUS_FINANCIAL_YEAR_END
+    mask = (
+        (dft['post_date'] >= balance_start_date)
+        & (dft['post_date'] <= balance_end_date))
+    dfr = (dft[['code', 'value']]
+        .loc[mask]
+        .groupby(['code'])
+        .sum()
+        .reset_index())
+
+    # SIE:
+    # #RES 0 3010 -400000
+    # #RES -1 3010 -400000
+    for account_code in account_codes:
+        row = dfr.loc[dfb['code'] == account_code]
+        value = 0.0 if row.empty else row['value'].iloc[0]
+        res_ += '#RES {} {} {:.2f}\n'.format(
+            year_code,
+            account_code,
+            value)
+
+    print(dfr.columns)
+    print(dfr.head(100))
+    year = FINANCIAL_YEAR_END[:4] if year_code == 0 else PREVIOUS_FINANCIAL_YEAR_END[:4]
+    dfr.to_csv(f'{COMPANY}_{year}-resultat.csv', index=False)
+    print(f'Beräknat resultat:{dfr["value"].sum():,.2f} (<0 innebär vinst)')
+    print(f'')
 
 
 
 print('\n************************** MOMS-konton ***********************************')
-dfM = df[df['code'].isin(MOMS_KONTON)]
-dfM.loc[:,'month'] = pd.to_datetime(dfM['post_date'])
-grouped  = dfM[['month','code','value']].groupby(['code',pd.Grouper(key='month', freq='M')])
+dfM = df.loc[df['code'].isin(MOMS_KONTON)].reset_index()
+dfM.loc[:, 'month'] = pd.to_datetime(dfM['post_date'])
+grouped  = (dfM[['month', 'code', 'value']]
+    .groupby(['code', pd.Grouper(key='month', freq='M')]))
 
-dft = grouped.agg([('Debit' , lambda x : x[x > 0].sum()),('Kredit' , lambda x : x[x < 0].sum())])
+dft = grouped.agg([
+    ('Debit' , lambda x : x[x > 0].sum()),
+    ('Kredit' , lambda x : x[x < 0].sum())])
 print(dft)
 dft.reset_index().to_csv(f'{COMPANY}_{YEAR}-moms.csv', index=False)
 
@@ -212,42 +258,48 @@ print('\n************************** SIE (alpha - experiment) *******************
 print('\nDropping rows with post_date < FINANCIAL_YEAR_START\n')
 df = df.loc[df['post_date'] >= FINANCIAL_YEAR_START]
 
-dfa = df[['code', 'name']].drop_duplicates('code').sort_values('code')
-accounts = ''
-for index, row in dfa.iterrows():
-    accounts = accounts + '#KONTO {} \"{}\"\n'.format(
-                  row['code'],
-                  row['name'])
-
 dim = '#DIM 8 Kund\n'
 dim += '#DIM 9 Leverantör\n'
 dim += '#DIM 10 Faktura\n'
-invoices = df[['invoice_id']].dropna().sort_values('invoice_id').drop_duplicates()
-customers = df[['customer_id', 'customer_name']].dropna().sort_values('customer_id').drop_duplicates()
-vendors = df[['vendor_id', 'vendor_name']].dropna().sort_values('vendor_id').drop_duplicates()
-objects = ''
-for _index, c in customers.iterrows():
-    objects += '#OBJEKT 8 \"{}\" \"Kund: {}\"\n'.format(c['customer_id'], c['customer_name'])
-for _index, v in vendors.iterrows():
-    objects += '#OBJEKT 9 \"{}\" \"Leverantör: {}\"\n'.format(v['vendor_id'], v['vendor_name'])
-for _index, i in invoices.iterrows():
-    objects += '#OBJEKT 10 \"{}\" \"Faktura: #{}\"\n'.format(i['invoice_id'], i['invoice_id'])
 
-prev_num = -1
-res = ''
+objects = ''
+invoices = (df[['invoice_id']]
+    .dropna()
+    .sort_values('invoice_id')
+    .drop_duplicates())
+customers = (df[['customer_id', 'customer_name']]
+    .dropna()
+    .sort_values('customer_id')
+    .drop_duplicates())
+vendors = (df[['vendor_id', 'vendor_name']]
+    .dropna()
+    .sort_values('vendor_id')
+    .drop_duplicates())
+for _index, c in customers.iterrows():
+    objects += '#OBJEKT 8 \"{}\" \"Kund: {}\"\n'.format(
+        c['customer_id'], c['customer_name'])
+for _index, v in vendors.iterrows():
+    objects += '#OBJEKT 9 \"{}\" \"Leverantör: {}\"\n'.format(
+        v['vendor_id'], v['vendor_name'])
+for _index, i in invoices.iterrows():
+    objects += '#OBJEKT 10 \"{}\" \"Faktura: #{}\"\n'.format(
+        i['invoice_id'], i['invoice_id'])
 
 df = df.sort_values(['post_date', 'description', 'tx_guid', 'code'])
 grouped = df.groupby(['post_date', 'description', 'tx_guid'])
+
+prev_num = -1
+res = ''
 for idx, (tx_guid, tx_df) in enumerate(grouped):
     first_trans = True
     trans_balance = 0
     for index, row in tx_df.iterrows():
         if first_trans:
             first_trans = False
-            res = res + '#VER A {} {} \"{}\"\n{{\n'.format(
-                        idx+1,
-                        row['post_date'][0:8],
-                        row['description'])
+            res += '#VER A {} {} \"{}\"\n{{\n'.format(
+                idx+1,
+                row['post_date'][0:8],
+                row['description'])
         customer_obj = '\"8\" \"{}\"'.format(row['customer_id']) if row['customer_id'] else ''
         vendor_obj = '\"9\" \"{}\"'.format(row['vendor_id']) if row['vendor_id'] else ''
         invoice_obj = '\"10\" \"{}\"'.format(row['invoice_id']) if row['invoice_id'] else ''
@@ -264,13 +316,13 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
             if objs:
                 objs += ' '
             objs += invoice_obj
-        res = res + '#TRANS {} {{{}}} {:.2f} \"\" \"{}\"\n'.format(
-                row['code'],
-                objs,
-                row['value'],
-                row['memo'])
+        res += '#TRANS {} {{{}}} {:.2f} \"\" \"{}\"\n'.format(
+            row['code'],
+            objs,
+            row['value'],
+            row['memo'])
         trans_balance += row['value']
-    res = res + '}\n'
+    res += '}\n'
     if abs(trans_balance) > 0.001:
         print("Imbalanced transaction: #{} balance={}".format(idx+1, trans_balance))
 
@@ -279,7 +331,14 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
 header = Path(f'{COMPANY}_header.se').read_text()
 print('\nAdding SIE header to SIE file\n', header)
 
-res = header + '\n' + accounts + '\n' + ib_ub + '\n' + res_ + '\n' + dim + '\n' + objects + '\n'+ res
+res = (header + '\n'
+    + accounts + '\n'
+    + ib + '\n'
+    + ub + '\n'
+    + res_ + '\n'
+    + dim + '\n'
+    + objects + '\n'
+    + res)
 
 filename = f'{COMPANY}_{YEAR}.se'
 file = open(filename, 'w')
