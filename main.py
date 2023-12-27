@@ -23,7 +23,7 @@ from os.path import exists
 DB_EXT  = 'gnucash'
 
 EXCLUDE_TRANS = []
-MOMS_KONTON = [1650,2611,2612,2614,2641,2645,2650]
+MOMS_KONTON = [1650, 2611, 2612, 2614, 2641, 2645, 2650]
 
 PREVIOUS_FINANCIAL_YEAR_START = '20220511'
 PREVIOUS_FINANCIAL_YEAR_END = '20221231'
@@ -217,7 +217,7 @@ for year_code in [0, -1]:
     # #RES 0 3010 -400000
     # #RES -1 3010 -400000
     for account_code in account_codes:
-        row = dfr.loc[dfb['code'] == account_code]
+        row = dfr.loc[dfr['code'] == account_code]
         value = 0.0 if row.empty else row['value'].iloc[0]
         res_ += '#RES {} {} {:.2f}\n'.format(
             year_code,
