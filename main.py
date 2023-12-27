@@ -262,11 +262,15 @@ dim = '#DIM 8 Kund\n'
 dim += '#DIM 9 Leverantör\n'
 dim += '#DIM 10 Faktura\n'
 
-objects = ''
-invoices = (df[['invoice_id']]
-    .dropna()
+invoices = (df[['invoice_id', 'customer_id', 'vendor_id']]
+    .dropna(subset=['invoice_id'])
     .sort_values('invoice_id')
     .drop_duplicates())
+customer_invoices = invoices.loc[invoices['customer_id'].notnull()]
+print('customer invoices:', customer_invoices)
+vendor_bills = invoices.loc[invoices['vendor_id'].notnull()]
+print('vendor bills:', vendor_bills)
+
 customers = (df[['customer_id', 'customer_name']]
     .dropna()
     .sort_values('customer_id')
@@ -275,14 +279,19 @@ vendors = (df[['vendor_id', 'vendor_name']]
     .dropna()
     .sort_values('vendor_id')
     .drop_duplicates())
+
+objects = ''
 for _index, c in customers.iterrows():
     objects += '#OBJEKT 8 \"{}\" \"Kund: {}\"\n'.format(
         c['customer_id'], c['customer_name'])
 for _index, v in vendors.iterrows():
     objects += '#OBJEKT 9 \"{}\" \"Leverantör: {}\"\n'.format(
         v['vendor_id'], v['vendor_name'])
-for _index, i in invoices.iterrows():
-    objects += '#OBJEKT 10 \"{}\" \"Faktura: #{}\"\n'.format(
+for _index, i in customer_invoices.iterrows():
+    objects += '#OBJEKT 10 \"{}\" \"Kundfaktura: #{}\"\n'.format(
+        i['invoice_id'], i['invoice_id'])
+for _index, i in vendor_bills.iterrows():
+    objects += '#OBJEKT 10 \"{}\" \"Leverantörsfaktura: #{}\"\n'.format(
         i['invoice_id'], i['invoice_id'])
 
 df = df.sort_values(['post_date', 'description', 'tx_guid', 'code'])
