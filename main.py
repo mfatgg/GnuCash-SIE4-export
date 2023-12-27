@@ -100,11 +100,7 @@ df = run_sql(
     '   left join vendors v'
     '     on v.guid=i.owner_guid'
     ' order by post_date')
-print ("df:", df.columns)
 grouped = df.groupby(['tx_guid'])
-print("orig df:")
-for tx_guid, tx_df in grouped:
-    print("  transaction:", tx_guid, tx_df.columns)
 
 
 # Saw new-line in description once...
@@ -262,8 +258,8 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
                 row['memo'])
         trans_balance += row['value']
     res = res + '}\n'
-    if trans_balance != 0:
-        print("Unbalanced transaction: #{}".format(idx+1))
+    if abs(trans_balance) > 0.001:
+        print("Imbalanced transaction: #{} balance={}".format(idx+1, trans_balance))
 
 
 # Add SIE header to file
