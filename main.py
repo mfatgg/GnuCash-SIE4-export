@@ -325,10 +325,11 @@ for idx, (tx_guid, tx_df) in enumerate(grouped):
             if objs:
                 objs += ' '
             objs += invoice_obj
-        res += '#TRANS {} {{{}}} {:.2f} \"\" \"{}\"\n'.format(
+        res += '#TRANS {} {{{}}} {:.2f} {} \"{}\"\n'.format(
             row['code'],
             objs,
             row['value'],
+            row['post_date'][0:8],
             row['memo'])
         trans_balance += row['value']
     res += '}\n'
