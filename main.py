@@ -25,10 +25,10 @@ DB_EXT  = 'gnucash'
 EXCLUDE_TRANS = []
 MOMS_KONTON = [1650, 2611, 2612, 2614, 2641, 2645, 2650]
 
-PREVIOUS_FINANCIAL_YEAR_START = '20220511'
-PREVIOUS_FINANCIAL_YEAR_END = '20221231'
-FINANCIAL_YEAR_START = '20230101'
-FINANCIAL_YEAR_END = '20231231'
+PREVIOUS_FINANCIAL_YEAR_START = '20230101'
+PREVIOUS_FINANCIAL_YEAR_END = '20231231'
+FINANCIAL_YEAR_START = '20240101'
+FINANCIAL_YEAR_END = '20241231'
 
 pd.set_option('display.max_columns', 50)
 pd.set_option('display.max_rows', 100)
@@ -137,6 +137,7 @@ print(dfa.head(100))
 print('\n************************** Balanskonton ***********************************')
 dft = df[['post_date', 'code', 'value']]
 dft = dft.loc[dft['code'] < 3000]
+balance_account_codes = dft['code'].sort_values().drop_duplicates().to_list()
 
 ib = ''
 for year_code in [0, -1]:
@@ -151,7 +152,7 @@ for year_code in [0, -1]:
     # SIE4:
     # #IB 0 1311 100000
     # #IB -1 1311 90000
-    for account_code in account_codes:
+    for account_code in balance_account_codes:
         row = dfb.loc[dfb['code'] == account_code]
         value = 0.0 if row.empty else row['value'].iloc[0]
         ib += '#IB {} {} {:.2f}\n'.format(
@@ -173,7 +174,7 @@ for year_code in [0, -1]:
     # SIE4:
     # #UB 0 1311 100000
     # #UB -1 1311 90000
-    for account_code in account_codes:
+    for account_code in balance_account_codes:
         row = dfb.loc[dfb['code'] == account_code]
         value = 0.0 if row.empty else row['value'].iloc[0]
         ub += '#UB {} {} {:.2f}\n'.format(
@@ -198,6 +199,7 @@ for year_code in [0, -1]:
 print('\n************************** Resultatkonton ***********************************')
 dft = df[['post_date', 'code', 'value']]
 dft = dft.loc[dft['code'] >= 3000]
+profitloss_account_codes = dft['code'].sort_values().drop_duplicates().to_list()
 
 res_ = ''
 for year_code in [0, -1]:
@@ -216,7 +218,7 @@ for year_code in [0, -1]:
     # SIE:
     # #RES 0 3010 -400000
     # #RES -1 3010 -400000
-    for account_code in account_codes:
+    for account_code in profitloss_account_codes:
         row = dfr.loc[dfr['code'] == account_code]
         value = 0.0 if row.empty else row['value'].iloc[0]
         res_ += '#RES {} {} {:.2f}\n'.format(
